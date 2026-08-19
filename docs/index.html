@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaperTrail — download</title>
+<meta name="description" content="See how finance data really moves — file, tab, column and formula — through your spreadsheets. Runs entirely on your own machine.">
+<style>
+:root{
+  --ink:#eef2fa; --dim:#a8b3c7; --faint:#7b8598;
+  --glass:rgba(255,255,255,.10); --glass-solid:rgba(255,255,255,.16); --edge:rgba(255,255,255,.20);
+  --blur:blur(14px) saturate(180%);
+  --hi:#7aa2ff; --good:#5ad8a6; --warn:#f7c948; --bad:#ff7a63; --violet:#b18cf0; --r:18px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,Helvetica,Arial,sans-serif;
+  background:#0a0d14;overflow-x:hidden}
+.bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:
+  radial-gradient(1100px 700px at 12% -5%, #1b2b5e 0%, transparent 60%),
+  radial-gradient(900px 640px at 88% 8%, #143f4a 0%, transparent 62%),
+  radial-gradient(900px 800px at 60% 105%, #3a1d52 0%, transparent 60%),#0a0d14}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;animation:drift 26s ease-in-out infinite alternate}
+.b1{width:420px;height:420px;background:#3b6fe0;top:-60px;left:6%}
+.b2{width:360px;height:360px;background:#12a4a4;top:22%;right:4%;animation-delay:-8s}
+.b3{width:400px;height:400px;background:#8a4fd6;bottom:-90px;left:38%;animation-delay:-15s}
+@keyframes drift{to{transform:translate3d(40px,-30px,0) scale(1.12)}}
+@media (prefers-reduced-motion:reduce){.blob{animation:none}}
+.glass{background:var(--glass);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
+  border:1px solid var(--edge);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.12)}
+@supports not ((backdrop-filter:blur(2px)) or (-webkit-backdrop-filter:blur(2px))){.glass{background:rgba(20,26,40,.94)}}
+
+.wrap{max-width:980px;margin:0 auto;padding:0 24px}
+header{display:flex;align-items:center;gap:14px;padding:34px 0 10px}
+.logo{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;flex:none;
+  background:linear-gradient(140deg,rgba(122,162,255,.9),rgba(177,140,240,.75));
+  box-shadow:0 6px 18px rgba(90,120,255,.35), inset 0 1px 0 rgba(255,255,255,.5)}
+.logo svg{width:23px;height:23px}
+h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px}
+.sub{color:var(--dim);font-size:13px;margin-top:2px}
+.badge{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:#a9e9cd;
+  padding:6px 13px;border-radius:999px;background:rgba(90,216,166,.10);border:1px solid rgba(90,216,166,.30);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+nav a{color:var(--dim);font-size:12.5px;text-decoration:none;margin-left:16px}
+nav a:hover{color:var(--ink)}
+
+.hero{padding:44px 0 8px;text-align:center}
+.hero h2{font-size:clamp(28px,4.4vw,44px);margin:0 0 14px;letter-spacing:-.5px;line-height:1.12}
+.hero h2 b{background:linear-gradient(135deg,#8fb3ff,#c9a9f7);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--dim);font-size:16px;max-width:620px;margin:0 auto 30px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin:26px 0 10px}
+.card{padding:26px;text-align:left;display:flex;flex-direction:column;gap:14px}
+.card .kicker{display:flex;align-items:center;gap:10px}
+.pill{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;padding:4px 10px;border-radius:999px;
+  background:rgba(122,162,255,.14);border:1px solid rgba(122,162,255,.35);color:#bcd0ff}
+.pill.reco{background:rgba(90,216,166,.14);border-color:rgba(90,216,166,.4);color:#9ce9c6}
+.card h3{margin:0;font-size:19px}
+.card p{margin:0;color:var(--dim);font-size:13.5px}
+.meta{display:flex;gap:16px;font-size:12px;color:var(--faint);flex-wrap:wrap}
+.meta b{color:var(--dim);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--edge);
+  background:rgba(255,255,255,.10);color:var(--ink);border-radius:12px;padding:13px 18px;font-size:14.5px;
+  font-weight:600;cursor:pointer;text-decoration:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  transition:.16s}
+.btn:hover{background:rgba(255,255,255,.17);transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(140deg,rgba(122,162,255,.92),rgba(140,120,240,.85));
+  border-color:rgba(160,190,255,.5);color:#fff;box-shadow:0 8px 24px rgba(90,120,255,.30)}
+
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:34px 0}
+.step{padding:16px;border-radius:14px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10)}
+.step b{display:block;font-size:13.5px;margin-bottom:4px}
+.step span{color:var(--dim);font-size:12.5px}
+.step i{font-style:normal;color:var(--hi);font-size:11px;letter-spacing:1px}
+
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:16px 0 40px}
+.feat .glass{padding:18px}
+.feat h4{margin:0 0 6px;font-size:14px}
+.feat p{margin:0;color:var(--dim);font-size:13px}
+
+code{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:2px 7px;
+  font-size:12.5px;color:#cfe0f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px 16px;
+  overflow:auto;font-size:12.5px;color:#cfe0f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:8px 0 0}
+
+.trace{padding:26px;margin:10px 0 40px}
+.trace h3{margin:0 0 4px;font-size:17px}
+.trace p{color:var(--dim);font-size:13.5px;margin:0 0 18px}
+.mock{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;padding:10px 0}
+.box{padding:10px 14px;border-radius:11px;background:rgba(255,255,255,.09);border:1.4px solid rgba(122,162,255,.6);
+  font-size:12px;text-align:left;min-width:150px}
+.box b{display:block;font-size:12.5px}
+.box span{color:var(--dim);font-size:10.5px}
+.arrow{width:42px;height:2px;background:#f7c948;position:relative;margin:0 -2px;flex:none}
+.arrow::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left-color:#f7c948}
+.detail{margin-top:18px;padding:14px 16px;border-radius:12px;background:rgba(247,201,72,.08);border:1px solid rgba(247,201,72,.22);
+  font-size:12.5px;color:#ffe8ab}
+.detail b{color:#ffe08a}
+
+footer{padding:20px 0 50px;color:var(--faint);font-size:12px;text-align:center}
+footer a{color:var(--dim)}
+@media(max-width:640px){.mock{flex-direction:column}.arrow{width:2px;height:26px;margin:0}
+  .arrow::after{right:-4px;top:auto;bottom:-1px;border-left-color:transparent;border-top-color:#f7c948}}
+</style>
+</head>
+<body>
+<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+
+<div class="wrap">
+<header>
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+    <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 L21 21"/><path d="M7.5 10.5h6M10.5 7.5v6"/></svg></div>
+  <div><h1>PaperTrail</h1><div class="sub">local finance pipeline tracer · v2.1.0</div></div>
+  <div class="badge"><span class="dot"></span> Local only · nothing leaves your machine</div>
+  <nav><a href="https://github.com/Rutanshu/Finance">Source ↗</a></nav>
+</header>
+
+<section class="hero">
+  <h2>See how a number got to the<br><b>board pack</b> — file, tab, column, formula.</h2>
+  <p>PaperTrail maps every cross-file link between your Excel workbooks, flags database connections
+    and live web formulas hiding outside any formula, and traces each handoff down to the exact
+    sheet, column and formula that moved the number.</p>
+</section>
+
+<div class="cards">
+  <div class="glass card">
+    <div class="kicker"><span class="pill">macOS</span><span class="pill reco">Recommended</span></div>
+    <h3>Standalone app</h3>
+    <p>A single double-clickable file. Nothing to install — Python is bundled inside it.</p>
+    <div class="meta"><span><b>4.1 MB</b> zip</span><span>macOS (Apple Silicon)</span><span>v2.1.0</span></div>
+    <a class="btn primary" href="https://github.com/Rutanshu/Finance/releases/download/v2.1.0/PaperTrail-macOS-v2.1.0.zip">Download for macOS ↓</a>
+  </div>
+  <div class="glass card">
+    <div class="kicker"><span class="pill">Windows · Linux · macOS</span></div>
+    <h3>Source (Python)</h3>
+    <p>The full source, runs anywhere Python 3.9+ runs. Includes <code>run.sh</code> / <code>run.bat</code>.</p>
+    <div class="meta"><span><b>125 KB</b> zip</span><span>needs Python 3.9+</span><span>v2.1.0</span></div>
+    <a class="btn" href="https://github.com/Rutanshu/Finance/releases/download/v2.1.0/PaperTrail-source-v2.1.0.zip">Download source ↓</a>
+  </div>
+</div>
+
+<div class="steps">
+  <div class="step"><i>macOS app</i><b>Unzip → double-click</b><span><code>Run PaperTrail.command</code> starts the server and opens your browser.</span></div>
+  <div class="step"><i>from source</i><b>pip install -r requirements.txt</b><span>then <code>python -m papertrail</code></span></div>
+  <div class="step"><i>either way</i><b>Point it at a folder</b><span>paste your month-end folder path and hit Scan.</span></div>
+  <div class="step"><i>first run</i><b>Gatekeeper warning?</b><span>right-click the app → Open, once, to approve an unsigned binary.</span></div>
+</div>
+
+<div class="glass trace">
+  <h3>Tab &amp; column-level lineage</h3>
+  <p>Click any arrow on the map and it opens down to exactly which tab and column fed which — not just which file.</p>
+  <div class="mock">
+    <div class="box"><b>Revenue_Register.xlsx</b><span>Data tab · column C</span></div>
+    <div class="arrow"></div>
+    <div class="box"><b>Trial_Balance.xlsx</b><span>TB tab · column D</span></div>
+  </div>
+  <div class="detail"><b>2 cells</b> · sample formula: <code>='[Revenue_Register.xlsx]Summary'!$B$2</code></div>
+</div>
+
+<div class="feat">
+  <div class="glass"><h4>Auto-detected links</h4><p>Every cross-file formula and external-link table becomes an arrow, read straight out of the workbook.</p></div>
+  <div class="glass"><h4>External source detection</h4><p>Database connections, web queries, and live <code>WEBSERVICE()</code> formulas are flagged and traced to the exact tab they load into — credentials redacted before display.</p></div>
+  <div class="glass"><h4>Radial tabs view</h4><p>Select a workbook to see every tab and what connects to each one as a hub-and-spoke diagram.</p></div>
+  <div class="glass"><h4>Big-screen flow view</h4><p>Expand any workbook into a full Sources → Tabs → Columns → Destinations flow on the main canvas.</p></div>
+  <div class="glass"><h4>Declared handoffs</h4><p>Record the copy-pastes, emails and re-keying no scanner can see — usually your highest-risk hops.</p></div>
+  <div class="glass"><h4>Runs entirely offline</h4><p>Binds to 127.0.0.1 only. No HTTP client is imported anywhere in the package — check the source yourself.</p></div>
+</div>
+
+<footer>
+  PaperTrail v2.1.0 · MIT-style, do what you like with it · works with the network cable pulled out
+  <br>Source, issues and all releases: <a href="https://github.com/Rutanshu/Finance">github.com/Rutanshu/Finance</a>
+</footer>
+</div>
+</body>
+</html>
