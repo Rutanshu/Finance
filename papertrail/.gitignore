@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+papertrail.annotations.json
+.venv/
+dist/
+build/
+*.spec

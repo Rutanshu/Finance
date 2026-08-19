@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaperTrail — local finance pipeline tracer</title>
+<style>
+:root{
+  --ink:#eef2fa; --dim:#a8b3c7; --faint:#7b8598;
+  --glass:rgba(255,255,255,.10);
+  --glass-solid:rgba(255,255,255,.16);
+  --edge:rgba(255,255,255,.20);
+  --blur:blur(14px) saturate(180%);
+  --hi:#7aa2ff; --good:#5ad8a6; --warn:#f7c948; --bad:#ff7a63; --violet:#b18cf0;
+  --r:18px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--ink); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,Helvetica,Arial,sans-serif;
+  background:#0a0d14; overflow-x:hidden;
+}
+/* --- the colour field the glass sits on (glass over flat = dead glass) --- */
+.bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:
+  radial-gradient(1100px 700px at 12% -5%, #1b2b5e 0%, transparent 60%),
+  radial-gradient(900px 640px at 88% 8%, #143f4a 0%, transparent 62%),
+  radial-gradient(900px 800px at 60% 105%, #3a1d52 0%, transparent 60%),
+  #0a0d14;}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;animation:drift 26s ease-in-out infinite alternate}
+.b1{width:420px;height:420px;background:#3b6fe0;top:-60px;left:6%}
+.b2{width:360px;height:360px;background:#12a4a4;top:22%;right:4%;animation-delay:-8s}
+.b3{width:400px;height:400px;background:#8a4fd6;bottom:-90px;left:38%;animation-delay:-15s}
+@keyframes drift{to{transform:translate3d(40px,-30px,0) scale(1.12)}}
+
+.glass{
+  background:var(--glass);
+  -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur);
+  border:1px solid var(--edge);
+  border-radius:var(--r);
+  box-shadow:0 8px 32px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.12);
+}
+@supports not ((backdrop-filter:blur(2px)) or (-webkit-backdrop-filter:blur(2px))){
+  .glass{background:rgba(20,26,40,.94)}
+}
+@media (prefers-reduced-transparency:reduce){
+  .glass{background:rgba(20,26,40,.96);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .blob{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .blob{animation:none} }
+
+/* ------------------------------------------------------------------ chrome */
+header{display:flex;align-items:center;gap:14px;padding:16px 26px}
+.logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+  background:linear-gradient(140deg,rgba(122,162,255,.9),rgba(177,140,240,.75));
+  box-shadow:0 6px 18px rgba(90,120,255,.35), inset 0 1px 0 rgba(255,255,255,.5)}
+.logo svg{width:20px;height:20px}
+h1{margin:0;font-size:17px;font-weight:650;letter-spacing:.2px}
+.sub{color:var(--dim);font-size:12px;margin-top:1px}
+.badge{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:#a9e9cd;
+  padding:6px 13px;border-radius:999px;background:rgba(90,216,166,.10);border:1px solid rgba(90,216,166,.30)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+
+nav{display:flex;gap:6px;padding:0 26px 14px;flex-wrap:wrap}
+.tab{padding:8px 15px;border-radius:11px;cursor:pointer;color:var(--dim);font-size:13px;
+  border:1px solid transparent;user-select:none;transition:.18s}
+.tab:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.tab.on{color:#fff;background:var(--glass-solid);border-color:var(--edge);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+
+main{padding:0 26px 40px}
+.hidden{display:none !important}
+
+/* ------------------------------------------------------------------ setup */
+.setup{max-width:860px;margin:4vh auto;padding:34px}
+.setup h2{margin:0 0 6px;font-size:24px;letter-spacing:-.2px}
+.setup p.lead{color:var(--dim);margin:0 0 22px;font-size:14.5px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+input[type=text],input[type=search],select,textarea{
+  flex:1;min-width:200px;background:rgba(255,255,255,.07);border:1px solid var(--edge);
+  color:var(--ink);border-radius:12px;padding:11px 14px;font-size:14px;outline:none;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+input:focus,select:focus,textarea:focus{border-color:rgba(122,162,255,.75);box-shadow:0 0 0 3px rgba(122,162,255,.16)}
+::placeholder{color:#6c7690}
+.btn{border:1px solid var(--edge);background:rgba(255,255,255,.10);color:var(--ink);
+  border-radius:12px;padding:11px 17px;font-size:13.5px;cursor:pointer;white-space:nowrap;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);transition:.16s}
+.btn:hover{background:rgba(255,255,255,.17);transform:translateY(-1px)}
+.btn.primary{background:linear-gradient(140deg,rgba(122,162,255,.92),rgba(140,120,240,.85));
+  border-color:rgba(160,190,255,.5);color:#fff;font-weight:600;
+  box-shadow:0 8px 24px rgba(90,120,255,.30)}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
+.btn.on{background:rgba(122,162,255,.28);border-color:rgba(122,162,255,.65)}
+.note{margin-top:18px;font-size:12.5px;color:var(--faint)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:26px}
+.step{padding:15px;border-radius:14px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10)}
+.step b{display:block;font-size:13px;margin-bottom:3px}
+.step span{color:var(--dim);font-size:12.5px}
+.step i{font-style:normal;color:var(--hi);font-size:11px;letter-spacing:1px}
+
+/* ------------------------------------------------------------------ tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px;margin-bottom:16px}
+.tile{padding:14px 16px;border-radius:15px}
+.tile b{display:block;font-size:26px;font-weight:650;line-height:1.15;letter-spacing:-.5px}
+.tile span{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.9px}
+.tile.alert b{color:var(--bad)}
+
+.toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--dim);font-size:11.5px;margin:0 2px 12px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+.wrap{display:flex;gap:14px;align-items:flex-start}
+.canvas-wrap{position:relative;flex:1;min-width:0}
+.canvas{padding:6px;overflow:auto;max-height:74vh}
+.scrollhint{position:absolute;top:50%;transform:translateY(-50%);z-index:5;
+  background:rgba(122,162,255,.92);color:#0b0e17;font-size:11.5px;font-weight:700;
+  padding:7px 12px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .2s;
+  box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.scrollhint{right:14px}
+.scrollhint.left{left:14px;right:auto}
+.scrollhint.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.scrollhint{transition:none}}
+.side{width:378px;flex:none;padding:18px;max-height:78vh;overflow:auto}
+.side h3{margin:0 0 2px;font-size:16px;word-break:break-word}
+.side .kind{color:var(--dim);font-size:12px;margin-bottom:6px}
+.side h4{margin:18px 0 7px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:5px 0;
+  border-bottom:1px solid rgba(255,255,255,.07)}
+.kv span:first-child{color:var(--faint)}
+.statstrip{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--dim);
+  padding:10px 12px;margin:14px 0 4px;background:rgba(255,255,255,.045);border-radius:10px}
+.statstrip b{color:var(--ink);font-weight:650}
+.chip{display:inline-block;font-size:11px;padding:3px 9px;border-radius:999px;margin:2px 4px 2px 0;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:var(--dim)}
+.chip.bad{background:rgba(255,122,99,.14);border-color:rgba(255,122,99,.4);color:#ffb3a3}
+.chip.warn{background:rgba(247,201,72,.13);border-color:rgba(247,201,72,.35);color:#ffe08a}
+.chip.good{background:rgba(90,216,166,.13);border-color:rgba(90,216,166,.35);color:#9ce9c6}
+.side ul{margin:0;padding-left:17px;color:var(--dim);font-size:13px}
+.side li{margin-bottom:5px}
+svg{display:block}
+.node{cursor:pointer}
+.node text{pointer-events:none}
+.faded{opacity:.14}
+.canvas svg path{cursor:pointer}
+.side table{font-size:12px;margin-top:2px}
+.side th,.side td{padding:6px 8px}
+.side td code{font-size:11px;word-break:break-all}
+.gone{display:none !important}
+.sheetlist{border:1px solid rgba(255,255,255,.10);border-radius:12px;overflow:hidden}
+.sheetrow{padding:10px 12px;border-top:1px solid rgba(255,255,255,.07);transition:.12s}
+.sheetrow:first-child{border-top:none}
+.sheetrow:not(.open):hover{background:rgba(255,255,255,.05)}
+.sheetrow.open{background:rgba(122,162,255,.08)}
+.sheetrow-h{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.sheetrow-h b{flex:none}
+.sheetrow-h .meta{color:var(--dim);font-size:11px;margin-left:auto;text-align:right}
+.chevron{color:var(--faint);font-size:11px;width:10px;flex:none}
+.sheetback{font-size:12px;color:var(--hi);cursor:pointer;margin-bottom:8px;user-select:none}
+.sheetback:hover{text-decoration:underline}
+.flowhead{font-size:10px;letter-spacing:.7px;color:var(--faint);margin:10px 0 6px;text-transform:uppercase}
+.cap2{font-size:11px;color:var(--faint);margin:6px 2px 10px;line-height:1.5}
+.panel-sm{background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:6px}
+.bipartite .clickbox{cursor:pointer}
+.bipartite .clickbox rect{transition:.12s}
+.bipartite .clickbox:hover rect{fill:rgba(122,162,255,.22);stroke:rgba(122,162,255,.7)}
+.radial .radlbl{font-size:9px;fill:rgba(255,255,255,.78)}
+.radial .radnode{cursor:pointer}
+.radial .radnode circle{transition:.12s}
+.radial .radnode:hover circle{filter:brightness(1.35)}
+.radial .radnode:hover .radlbl{fill:#fff}
+.tabrow{cursor:pointer}
+.tabrow:hover rect{stroke-opacity:1}
+.tabmore{cursor:pointer}
+.extchip{display:block;margin-bottom:6px;padding:8px 10px;border-radius:10px;font-size:12px;line-height:1.4}
+.flowbar{display:flex;align-items:center;gap:8px;margin-top:4px}
+.flowbar span{font-size:12.5px;color:var(--dim)}
+.bipartite text{font-size:10.5px;fill:#dbe4f5}
+.bipartite .hdr{fill:var(--faint);font-size:9.5px;letter-spacing:.8px}
+
+/* ---------------------------------------------------------------- findings */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.card{padding:16px;border-radius:15px;border-left:3px solid var(--faint)}
+.card.high{border-left-color:var(--bad)} .card.med{border-left-color:var(--warn)} .card.low{border-left-color:var(--hi)}
+.card b{font-size:13.5px} .card .where{color:var(--dim);font-size:12px;margin:3px 0 8px}
+.card p{margin:0 0 9px;color:var(--dim);font-size:13px}
+.card .fix{font-size:12.5px;color:#bfe8d6;background:rgba(90,216,166,.08);
+  border:1px solid rgba(90,216,166,.18);border-radius:10px;padding:9px 11px}
+
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;overflow:hidden;border-radius:14px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.07)}
+th{background:rgba(255,255,255,.07);color:var(--dim);font-weight:600;font-size:11.5px;
+  letter-spacing:.5px;text-transform:uppercase;position:sticky;top:0}
+tr:hover td{background:rgba(255,255,255,.04)}
+
+.doc{max-width:880px;padding:28px 30px}
+.doc h2{font-size:19px;margin:26px 0 8px;letter-spacing:-.2px}
+.doc h2:first-child{margin-top:0}
+.doc h3{font-size:14.5px;margin:18px 0 6px;color:#dbe4f5}
+.doc p,.doc li{color:var(--dim);font-size:14px}
+.doc code,code{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;padding:2px 6px;font-size:12.5px;color:#cfe0f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);border-radius:12px;
+  padding:14px 16px;overflow:auto;font-size:12.5px;color:#cfe0f5;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.doc .big{font-size:15px;color:var(--ink)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:11px 20px;
+  border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:.25s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);
+  border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 L21 21"/><path d="M7.5 10.5h6M10.5 7.5v6"/>
+    </svg>
+  </div>
+  <div>
+    <h1>PaperTrail</h1>
+    <div class="sub">See how finance data really moves — file, tab, column and formula — through your spreadsheets</div>
+  </div>
+  <div class="badge"><span class="dot"></span> Local only · nothing leaves this machine</div>
+</header>
+
+<nav>
+  <div class="tab on" data-tab="setup">Scan</div>
+  <div class="tab" data-tab="map">Flow map</div>
+  <div class="tab" data-tab="findings">Findings</div>
+  <div class="tab" data-tab="handoffs">Handoffs</div>
+  <div class="tab" data-tab="guide">How to use</div>
+  <div class="tab" data-tab="why">Why it matters</div>
+</nav>
+
+<main>
+
+<!-- ============================================================== SCAN -->
+<section id="setup">
+  <div class="glass setup">
+    <h2>Point it at a folder of workbooks</h2>
+    <p class="lead">PaperTrail opens every <code>.xlsx</code> / <code>.xlsm</code> read-only, reads the formulas,
+      and works out which file feeds which — down to the exact tab, column and formula. Your files are never
+      modified, copied, or sent anywhere.</p>
+    <div class="row">
+      <input type="text" id="rootIn" placeholder="/Users/you/Finance/Month-end   or   C:\Finance\Month-end">
+      <button class="btn primary" id="scanBtn">Scan folder</button>
+    </div>
+    <div class="note" id="setupNote">Tip: start with your month-end close folder. 20–60 workbooks is the sweet spot.</div>
+
+    <div class="steps">
+      <div class="step"><i>01</i><b>Scan</b><span>Formula links between workbooks are found automatically.</span></div>
+      <div class="step"><i>02</i><b>Declare</b><span>Add the handoffs no scanner can see — the copy-pastes and the emails.</span></div>
+      <div class="step"><i>03</i><b>Trace</b><span>Click any report and walk backwards to the source of a wrong number.</span></div>
+      <div class="step"><i>04</i><b>Fix</b><span>Work the findings list top-down. Fragile handoffs first.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== MAP -->
+<section id="map" class="hidden">
+  <div class="tiles" id="tiles"></div>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Find a workbook or sheet…" style="max-width:250px">
+    <button class="btn primary hidden" id="backToMapBtn">‹ Back to map</button>
+    <button class="btn" id="traceBtn">Trace: off</button>
+    <button class="btn" id="isolateBtn" title="Hide everything except the selected workbook's flow">Isolate: off</button>
+    <button class="btn" id="riskBtn">Fragile only</button>
+    <button class="btn" id="addEdgeBtn">+ Declare a handoff</button>
+    <button class="btn" id="rescanBtn">Rescan</button>
+    <button class="btn" id="resetBtn">Reset</button>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="wrap">
+    <div class="canvas-wrap">
+      <div class="glass canvas" id="canvas"><svg id="svg" width="1200" height="600"></svg></div>
+      <div class="scrollhint" id="scrollHintR">more →</div>
+      <div class="scrollhint left" id="scrollHintL">← more</div>
+    </div>
+    <aside class="glass side" id="side"></aside>
+  </div>
+</section>
+
+<!-- ============================================================== FINDINGS -->
+<section id="findings" class="hidden">
+  <div class="tiles" id="fTiles"></div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<!-- ============================================================== HANDOFFS -->
+<section id="handoffs" class="hidden">
+  <div class="toolbar">
+    <button class="btn" id="csvBtn">Download as CSV</button>
+    <span style="color:var(--dim);font-size:12.5px">Sorted worst-first. This is your audit list.</span>
+  </div>
+  <div class="glass" style="padding:6px;overflow:auto;max-height:74vh"><table id="hTable"></table></div>
+</section>
+
+<!-- ============================================================== GUIDE -->
+<section id="guide" class="hidden">
+<div class="glass doc">
+  <h2>How to use PaperTrail</h2>
+  <p class="big">The whole tool exists to answer one question quickly: <b>this number is wrong — where did it come from?</b></p>
+
+  <h3>Step 1 — Scan</h3>
+  <p>Type the path of the folder your month-end workbooks live in and hit <b>Scan folder</b>. PaperTrail opens each
+    workbook read-only and pulls out every cross-file formula reference — things like
+    <code>='[Revenue_Register.xlsx]Data'!$B$4</code> — plus the external-link table hidden inside the file.
+    Each of those becomes an arrow on the map. Click any arrow and it opens down to the exact
+    <b>tab, column and formula</b> behind that handoff — not just "file A feeds file B."</p>
+
+  <h3>Step 2 — Declare the invisible handoffs</h3>
+  <p>Here is the honest limitation of every scanner ever written: <b>a copy-paste leaves no trace in the file.</b>
+    Neither does an email, nor someone re-keying figures off a PDF. Those are usually your <i>highest-risk</i> hops,
+    and only a human can tell you they exist.</p>
+  <p>So: click <b>+ Declare a handoff</b>, pick the source and destination workbook, and say how the data actually
+    moves — pasted, emailed, or typed. It is saved to <code>papertrail.annotations.json</code> in your own folder.
+    Ten minutes with whoever runs the close is enough to capture them all.</p>
+
+  <h3>Step 3 — Trace</h3>
+  <p>Turn on <b>Trace</b> and click a workbook. Everything unrelated fades out and you are left with the exact chain:
+    every file upstream that feeds it, and every file downstream that depends on it. Two directions, two uses:</p>
+  <ul>
+    <li><b>Upstream</b> — "Revenue looks off." Follow it back to the source. Usually you land on a dashed line.</li>
+    <li><b>Downstream</b> — "The bank changed its CSV format." Instantly see which reports are now unsafe,
+      <i>before</i> anyone presents them.</li>
+  </ul>
+  <p>Click any single <b>arrow</b> (or the "N columns traced" chip in a workbook's Fed by / Feeds list) to open the
+    tab-and-column breakdown for just that one handoff: which sheet and column on the source side, which sheet,
+    column and header it lands on, how many cells, and a sample of the actual formula text.</p>
+  <p>Or drill in from the workbook itself: select it, then click a sheet name under <b>Sheets</b>. The other sheets
+    step out of the way and that one sheet opens into exactly which columns it receives, from where, and which
+    columns it sends out to other files — end to end, one sheet at a time. Click "‹ back" to return to the list.</p>
+  <p>When a map gets busy, select a workbook and turn on <b>Isolate</b> — everything outside its up/downstream chain
+    is hidden, not just dimmed. If several sources merge into that one file, a <b>Flow</b> stepper appears so you can
+    step through each upstream route one at a time instead of looking at all of them tangled together.</p>
+  <p>Workbooks with a dashed pill-shaped box feeding them (🌐 🗄️ ☁️ 📧 📁 🔗 📡) are pulling data from outside the
+    scanned folder entirely — a database connection, a Power Query web/SharePoint/Exchange source, a legacy web
+    query, or a formula like <code>WEBSERVICE()</code> that reaches the internet on every recalculation. Click one
+    of those pills for detail; credentials in database connection strings are redacted before they're ever shown.</p>
+
+  <h3>Step 4 — Work the findings</h3>
+  <p>The <b>Findings</b> tab is ordered worst-first. It flags fragile handoffs, broken links to files that are not in
+    your folder, volatile formulas that no tool can trace through (<code>INDIRECT</code>, <code>OFFSET</code>),
+    hardcoded constants buried in formulas, and orphan workbooks that nothing appears to feed.</p>
+
+  <h3>Step 5 — Re-run it monthly</h3>
+  <p>Rescan after each close. Your annotations persist, so you only ever describe a handoff once. Export the
+    <b>Handoffs</b> tab to CSV and it doubles as audit evidence that someone has actually looked at the pipeline.</p>
+
+  <h2>The one fix worth doing first</h2>
+  <p>At every fragile handoff, carry <b>one number that must match on both sides</b> — a row count, a gross total,
+    or a hash of the key column. Put it in a visible cell with conditional formatting that turns red on mismatch.
+    Most spreadsheet finance errors surface within seconds once that exists. PaperTrail tells you where to put them.</p>
+
+  <h2>Running it</h2>
+  <pre>pip install -r requirements.txt
+python -m papertrail                        # then paste the folder path in the UI
+python -m papertrail "C:\Finance\Month-end" # or scan on startup
+python -m papertrail --port 9000 --no-browser</pre>
+
+  <h2>Limits — worth being clear about</h2>
+  <ul>
+    <li>For <b>cross-file</b> formulas it resolves the exact source tab, column and cell — but it does not recompute
+      the number for you. It tells you where to look, not what the number should be.</li>
+    <li>Lineage <i>within</i> one workbook (sheet A feeds sheet B in the same file) is still summarised at the sheet
+      level, not drawn cell-by-cell. If you need that, <a href="https://github.com/dgorissen/pycel" target="_blank" rel="noopener">pycel</a> is the tool for it.</li>
+    <li><code>INDIRECT</code> and <code>OFFSET</code> build references at runtime, so no static tool can follow them. They are flagged, not traced.</li>
+    <li>A reference to a named range or a whole column (<code>A:A</code>) is still shown as a file-level handoff — the
+      column view only fills in when the formula points at a specific cell or range.</li>
+    <li>Files outside the scanned folder show up as broken links — which is itself useful. Shadow workbooks on someone's desktop are exactly what you want to discover.</li>
+    <li>Password-protected or corrupt files are reported as unreadable rather than skipped silently.</li>
+  </ul>
+</div>
+</section>
+
+<!-- ============================================================== WHY -->
+<section id="why" class="hidden">
+<div class="glass doc">
+  <h2>Why this matters</h2>
+  <p class="big">Excel is not the problem. <b>Undocumented handoffs between spreadsheets</b> are the problem.</p>
+  <p>A formula error is visible and usually caught. What is not visible is that the revenue block in the trial balance
+    is pasted in by one person every month, from a file that is itself pasted together from two exports whose date
+    filters are chosen by hand. Nothing in the workbook records that. It lives in one person's memory — and it walks
+    out of the door when they do.</p>
+
+  <h2>What you get</h2>
+  <h3>1. Close the month faster</h3>
+  <p>Most "the numbers don't tie" hours are spent working out <i>where a figure came from</i>, not fixing it.
+    Tracing back is a click instead of an afternoon of asking around.</p>
+
+  <h3>2. Survive an audit without heroics</h3>
+  <p>Auditors ask for the flow of financial information end to end. Most companies redraw it by hand each year from
+    memory. Export the Handoffs tab and it is done — and it is accurate, because it was read out of the files.</p>
+
+  <h3>3. Reduce key-person risk</h3>
+  <p>When the person who runs the close leaves, the map stays. Onboarding their replacement becomes a walkthrough
+    rather than an archaeology project.</p>
+
+  <h3>4. Make the risk arguable</h3>
+  <p>"Our process is a bit manual" gets no budget. "Sixty percent of our reporting pipeline moves by copy-paste, here
+    are the eleven specific hops, ranked" gets a decision. The tool turns a feeling into a list.</p>
+
+  <h3>5. Aim automation where it pays</h3>
+  <p>If you ever move to a proper system, the fragile handoffs are the migration order. You automate the eleven hops
+    that matter instead of rebuilding everything.</p>
+
+  <h2>Why it runs locally — and how you can verify that</h2>
+  <p>Finance data is the most sensitive data a company holds. So this is not a cloud service with a privacy policy,
+    it is a program on your machine with no way to phone home:</p>
+  <ul>
+    <li>The server binds to <code>127.0.0.1</code> only. Not <code>0.0.0.0</code>. Nothing else on your network can reach it.</li>
+    <li>No HTTP client is imported anywhere in the package. Check it yourself:
+      <code>grep -rn "requests\|urllib.request\|httpx\|socket.connect" papertrail/</code> returns nothing.</li>
+    <li>No CDN, no web fonts, no analytics. The page is one HTML file served from disk, with a
+      <code>connect-src 'self'</code> content-security policy on top.</li>
+    <li>Workbooks are opened read-only. The only file written is <code>papertrail.annotations.json</code>, in your own folder.</li>
+    <li>Want certainty? Pull the network cable and run it. Everything works.</li>
+  </ul>
+
+  <h2>Where it sits next to existing tools</h2>
+  <p>Cell-level tools (pycel, ExceLint) map <i>A1 feeds B7</i> inside a workbook. Enterprise lineage platforms
+    (OpenLineage, Marquez) map database pipelines and assume instrumented jobs. Neither can see a human carrying a
+    file between two workbooks — which in a spreadsheet-run finance function is most of the pipeline.
+    That gap is what PaperTrail fills.</p>
+</div>
+</section>
+
+</main>
+<div class="toast glass" id="toast"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const RISKC = {high:"#ff7a63", med:"#f7c948", low:"#5ad8a6"};
+const MECH  = {query:"Automated refresh", formula:"Cross-file formula",
+               paste:"Copy-paste by hand", manual:"Typed in by hand", email:"Emailed between people",
+               web_query:"Web query / API", database:"Database connection", sharepoint:"SharePoint / cloud file",
+               exchange:"Exchange / email data", local_folder:"Local folder (Power Query)",
+               web_workbook:"Linked workbook via URL", web_formula:"Live web formula"};
+const EXT_ICON = {web_query:"🌐", database:"🗄️", sharepoint:"☁️", exchange:"📧",
+                   local_folder:"📁", web_workbook:"🔗", web_formula:"📡"};
+const STAGE_NAMES = ["External","Sources","Feeds","Staging","Consolidation","Reports"];
+const STAGE_C = ["#f7c948","#7aa2ff","#63d2f0","#b18cf0","#f7c948","#5ad8a6"];
+let G = null, traceMode = false, riskMode = false, isolateMode = false, selected = null;
+let chainState = null;  // {chains, idx} while stepping through one upstream path at a time
+let expandedSheet = null;  // which sheet's column drill-down is open in the workbook panel
+let flowView = null;  // workbook id currently shown full-screen as Sources->Tabs->Columns->Destinations
+
+function toast(msg, ms=2600){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"), ms);
+}
+async function api(path, body){
+  const opt = body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt);
+  return r.json();
+}
+
+/* ---------------------------------------------------------------- tabs */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick = ()=>{
+    if(!G && t.dataset.tab!=="setup" && t.dataset.tab!=="guide" && t.dataset.tab!=="why")
+      return toast("Scan a folder first");
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+    t.classList.add("on");
+    ["setup","map","findings","handoffs","guide","why"].forEach(id=>
+      document.getElementById(id).classList.toggle("hidden", id!==t.dataset.tab));
+    // the canvas was 0×0 while its section was display:none — now that it's visible, recheck overflow
+    if(t.dataset.tab==="map" && typeof updateScrollHints==="function") updateScrollHints();
+  };
+});
+function goTab(name){ document.querySelector(`.tab[data-tab="${name}"]`).click(); }
+
+/* ---------------------------------------------------------------- scan */
+$("#scanBtn").onclick = async ()=>{
+  const root = $("#rootIn").value.trim();
+  if(!root) return toast("Type a folder path first");
+  $("#setupNote").innerHTML = '<span class="spin"></span>Reading workbooks…';
+  const res = await api("/api/scan", {root});
+  if(res.error){ $("#setupNote").textContent = "✕ " + res.error; return; }
+  G = res.graph;
+  $("#setupNote").textContent = `✓ ${G.stats.workbooks} workbooks · ${G.stats.formulas.toLocaleString()} formulas · ${G.stats.handoffs} handoffs found in ${res.root}`;
+  render(); goTab("map");
+  if(G.stats.handoffs === 0)
+    toast("No formula links found — the flow here is probably all manual. Declare the handoffs.", 5200);
+};
+$("#rootIn").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#scanBtn").click(); });
+
+$("#rescanBtn").onclick = async ()=>{
+  toast("Rescanning…"); const r = await api("/api/rescan", {});
+  if(r.error) return toast(r.error);
+  G = r.graph; render(); toast("Rescanned. Annotations kept.");
+};
+$("#csvBtn").onclick = ()=> location.href = "/api/export.csv";
+
+/* ---------------------------------------------------------------- layout */
+const NS = "http://www.w3.org/2000/svg";
+const el = (t,a)=>{const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); return e;};
+const NW = 186, NH = 58, VGAP = 22, PADX = 26, PADY = 46;
+const TAB_HDR = 48, TAB_ROW = 15, TAB_MAX = 4;   // sheet-tab rows drawn inside a workbook node
+let pos = {};
+
+// external nodes stay a fixed pill height; workbook nodes grow to list up to TAB_MAX sheet tabs
+function nodeH(n){
+  if(n.kind==="external") return NH;
+  const rows = Math.min(n.sheets.length, TAB_MAX) + (n.sheets.length>TAB_MAX ? 1 : 0);
+  return TAB_HDR + rows*TAB_ROW + 8;
+}
+
+function layout(){
+  const cols = [0,1,2,3,4,5].map(s => G.nodes.filter(n=>n.stage===s));
+  const used = cols.map((c,i)=>({i,c})).filter(o=>o.c.length);
+  const W = Math.max(880, PADX*2 + Math.max(0,used.length-1)*(NW+88) + NW);
+  const colH = used.map(o => o.c.reduce((sum,n)=>sum+nodeH(n)+VGAP, 0) - VGAP);
+  const maxColH = Math.max(1, ...colH);
+  const H = PADY + maxColH + 30;
+  pos = {};
+  used.forEach((o,ci)=>{
+    const x = PADX + ci*((W - PADX*2 - NW) / Math.max(1, used.length-1));
+    let y = PADY + (maxColH - colH[ci]) / 2;
+    o.c.forEach(n=>{
+      pos[n.id] = {x: used.length===1 ? W/2-NW/2 : x, y, h: nodeH(n)};
+      y += nodeH(n) + VGAP;
+    });
+  });
+  return {W, H, used};
+}
+
+// the clickable list of sheet-tab rows drawn inside a workbook node on the map itself
+function sheetTabsEl(n){
+  const g = el("g",{});
+  n.sheets.slice(0, TAB_MAX).forEach((s,i)=>{
+    const row = el("g",{class:"tabrow", transform:`translate(6,${TAB_HDR + i*TAB_ROW})`});
+    row.appendChild(el("rect",{x:0,y:0,width:NW-12,height:TAB_ROW-3,rx:4,
+      fill:"rgba(255,255,255,.05)", stroke:"rgba(255,255,255,.16)", "stroke-width":1}));
+    const t = el("text",{x:7,y:8.5,"font-size":9.5,fill:"rgba(255,255,255,.72)"});
+    t.textContent = trunc(s.name,24);
+    const ttl = el("title",{}); ttl.textContent = `${s.name} — click for column-level lineage`;
+    row.append(t, ttl);
+    row.onclick = ev=>{ ev.stopPropagation(); openSheet(n.id, s.name); };
+    g.appendChild(row);
+  });
+  if(n.sheets.length > TAB_MAX){
+    const rest = n.sheets.length - TAB_MAX;
+    const more = el("text",{class:"tabmore", x:9, y:TAB_HDR + TAB_MAX*TAB_ROW + 8.5, "font-size":9.5, fill:"#7aa2ff"});
+    more.textContent = `+${rest} more sheet${rest===1?"":"s"}`;
+    more.onclick = ev=>{ ev.stopPropagation(); select(n.id); };
+    g.appendChild(more);
+  }
+  return g;
+}
+
+function drawGraph(){
+  const svg = $("#svg"); svg.innerHTML = "";
+  const {W,H,used} = layout();
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const defs = el("defs",{});
+  ["low","med","high"].forEach(r=>{
+    const m = el("marker",{id:"a-"+r,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:6,markerHeight:6,orient:"auto"});
+    m.appendChild(el("path",{d:"M0,0 L10,5 L0,10 z", fill:RISKC[r]})); defs.appendChild(m);
+  });
+  svg.appendChild(defs);
+
+  used.forEach((o,ci)=>{
+    const anyId = o.c[0].id;
+    const t = el("text",{x: pos[anyId].x + NW/2, y: 26, "text-anchor":"middle",
+      "font-size":10.5, "letter-spacing":1.4, fill:"rgba(255,255,255,.42)"});
+    t.textContent = STAGE_NAMES[o.i].toUpperCase(); svg.appendChild(t);
+  });
+
+  const gE = el("g",{}); svg.appendChild(gE);
+  const gN = el("g",{}); svg.appendChild(gN);
+
+  G._edgeEls = [];
+  G.edges.forEach(e=>{
+    const p1 = pos[e.from], p2 = pos[e.to]; if(!p1||!p2) return;
+    let x1=p1.x+NW, y1=p1.y+p1.h/2, x2=p2.x, y2=p2.y+p2.h/2;
+    let d;
+    if(x2 < x1){ // backward / same column: loop under
+      d = `M${p1.x+NW/2},${p1.y+p1.h} C${p1.x+NW/2},${p1.y+p1.h+50} ${p2.x+NW/2},${p2.y+p2.h+50} ${p2.x+NW/2},${p2.y+p2.h}`;
+    } else {
+      const mx=(x1+x2)/2; d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    }
+    const path = el("path",{d, fill:"none", stroke:RISKC[e.risk], "stroke-width":1.7,
+      "stroke-opacity":.8, "marker-end":`url(#a-${e.risk})`});
+    if(!e.discovered || e.risk==="high") path.setAttribute("stroke-dasharray","6 4");
+    path.dataset.from=e.from; path.dataset.to=e.to; path.dataset.risk=e.risk; path.dataset.id=e.id;
+    const colTxt = e.columns && e.columns.length
+      ? " — " + e.columns.slice(0,3).map(c=>`${c.src_sheet}!${c.src_col}→${c.dest_sheet}!${c.dest_col}`).join(", ")
+        + (e.columns.length>3 ? ` +${e.columns.length-3} more` : "")
+      : "";
+    const ttl = el("title",{}); ttl.textContent = `${MECH[e.mechanism]}${e.note?" — "+e.note:""}${colTxt}\n(click for tab/column detail)`;
+    path.appendChild(ttl);
+    path.onclick = ev=>{ ev.stopPropagation(); selectEdge(e.id); };
+    gE.appendChild(path); G._edgeEls.push(path);
+  });
+
+  G._nodeEls = {};
+  G.nodes.forEach(n=>{
+    const p = pos[n.id]; if(!p) return;
+    const isExt = n.kind === "external";
+    const g = el("g",{class:"node", transform:`translate(${p.x},${p.y})`});
+    const r = el("rect",{width:NW,height:p.h,rx: isExt?p.h/2:13,
+      fill: isExt ? "rgba(247,201,72,.07)" : "rgba(255,255,255,.09)",
+      stroke: n.error ? RISKC.high : STAGE_C[n.stage], "stroke-width":1.4});
+    if(isExt) r.setAttribute("stroke-dasharray","4 3");
+    const t1 = el("text",{x:13,y:23,"font-size":12.5,fill:"#eef2fa","font-weight":600});
+    t1.textContent = trunc(n.name,23);
+    const t2 = el("text",{x:13,y:41,"font-size":10.5,fill:"rgba(255,255,255,.5)"});
+    t2.textContent = isExt ? n.label : `${n.sheet_count} sheet${n.sheet_count===1?"":"s"} · ${n.formula_count} formulas`;
+    const ttl = el("title",{}); ttl.textContent = isExt ? `${n.label}: ${n.detail}\n(${n.via})` : n.rel_path;
+    g.append(r,t1,t2,ttl);
+    g.onclick = ()=> isExt ? selectExternal(n.id) : select(n.id);
+    if(!isExt) g.appendChild(sheetTabsEl(n));
+    gN.appendChild(g); G._nodeEls[n.id] = {g,r};
+  });
+  applyView();
+  updateScrollHints();
+}
+
+// nudges the user to scroll when the map/flow is wider than the visible canvas — otherwise whole
+// stages (e.g. "Reports") can sit off-screen with no hint they exist.
+function updateScrollHints(){
+  const c = $("#canvas"); if(!c) return;
+  const max = c.scrollWidth - c.clientWidth;
+  $("#scrollHintR").classList.toggle("show", max>8 && c.scrollLeft < max-8);
+  $("#scrollHintL").classList.toggle("show", c.scrollLeft > 8);
+}
+
+/* ------------------------------------------------------- big-screen file flow */
+// Same box-and-curve visual language as the pipeline map above, but scoped to one workbook and one
+// level deeper: SOURCES -> TABS -> COLUMNS -> DESTINATIONS, using the full canvas instead of the
+// 342px side panel. Tab->column links are always drawn (structural); source/dest links use the exact
+// per-column data already computed by bySheet(), so a column that both receives and sends shows both.
+function openBigFlow(fileId){
+  const n = G.nodes.find(x=>x.id===fileId);
+  if(!n || n.kind!=="workbook") return;
+  flowView = fileId;
+  render();
+}
+function closeBigFlow(){ flowView = null; render(); }
+
+function drawBigFlow(){
+  const id = flowView, n = G.nodes.find(x=>x.id===id);
+  if(!n){ closeBigFlow(); return; }
+  const ins = G.edges.filter(e=>e.to===id), outs = G.edges.filter(e=>e.from===id);
+  const inBySheet = bySheet(ins,"in"), outBySheet = bySheet(outs,"out");
+
+  const cols = {};
+  Object.values(inBySheet).flat().forEach(c=>{
+    const k = `${c.dest_sheet}!${c.dest_col}`;
+    (cols[k] ??= {key:k, sheet:c.dest_sheet, col:c.dest_col, header:c.dest_header, into:[], out:[]}).into.push(c);
+  });
+  Object.values(outBySheet).flat().forEach(c=>{
+    const k = `${c.src_sheet}!${c.src_col}`;
+    const row = cols[k] ??= {key:k, sheet:c.src_sheet, col:c.src_col, header:"", into:[], out:[]};
+    row.out.push(c);
+  });
+  const colList = Object.values(cols).sort((a,b)=>
+    a.sheet===b.sheet ? (a.col>b.col?1:-1) : a.sheet.localeCompare(b.sheet));
+
+  const srcIds = [...new Set(ins.map(e=>e.from))], destIds = [...new Set(outs.map(e=>e.to))];
+  const tiers = [
+    {label:"SOURCES", items: srcIds.map(pid=>({key:pid, label:nName(pid), onClick:()=>openPeer(pid)}))},
+    {label:"TABS", items: n.sheets.map(s=>({key:s.name, label:s.name, sub:`${s.rows}×${s.cols}`,
+                                             onClick:()=>openSheet(id,s.name)}))},
+    {label:"COLUMNS", items: colList.map(c=>{
+      const link = c.into[0] || c.out[0];
+      return {key:c.key, label:`${c.sheet}!${c.col}`, sub: c.header,
+              onClick: link ? ()=>selectEdge(link.edgeId) : null};
+    })},
+    {label:"DESTINATIONS", items: destIds.map(pid=>({key:pid, label:nName(pid), onClick:()=>openPeer(pid)}))},
+  ].filter(t => t.items.length);
+
+  const BW=178, BH=40, GAP=15, PADX=44, PADY=48;
+  const W = Math.max(920, PADX*2 + Math.max(0,tiers.length-1)*(BW+130) + BW);
+  const blockH = tiers.map(t => t.items.length*(BH+GAP)-GAP);
+  const maxH = Math.max(1, ...blockH);
+  const H = PADY + maxH + 30;
+
+  const pos = {};
+  tiers.forEach((t,ci)=>{
+    const x = PADX + ci*((W-PADX*2-BW)/Math.max(1,tiers.length-1));
+    let y = PADY + (maxH-blockH[ci])/2;
+    t.items.forEach(it=>{ pos[t.label+"|"+it.key] = {x,y,w:BW,h:BH}; y += BH+GAP; });
+  });
+
+  const svg = $("#svg"); svg.innerHTML = "";
+  svg.setAttribute("width",W); svg.setAttribute("height",H); svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+
+  const defs = el("defs",{});
+  ["low","med","high"].forEach(r=>{
+    const m = el("marker",{id:"fa-"+r,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:6,markerHeight:6,orient:"auto"});
+    m.appendChild(el("path",{d:"M0,0 L10,5 L0,10 z", fill:RISKC[r]})); defs.appendChild(m);
+  });
+  svg.appendChild(defs);
+
+  tiers.forEach(t=>{
+    const p = pos[t.label+"|"+t.items[0].key];
+    const lbl = el("text",{x:p.x+BW/2, y:26, "text-anchor":"middle", "font-size":10.5,
+                            "letter-spacing":1.4, fill:"rgba(255,255,255,.42)"});
+    lbl.textContent = t.label; svg.appendChild(lbl);
+  });
+
+  const gE = el("g",{}), gN = el("g",{}); svg.append(gE, gN);
+  const arrow = (fromKey, toKey, cells, risk) => {
+    const p1 = pos[fromKey], p2 = pos[toKey]; if(!p1||!p2) return;
+    const x1=p1.x+p1.w, y1=p1.y+p1.h/2, x2=p2.x, y2=p2.y+p2.h/2, mx=(x1+x2)/2;
+    const path = el("path",{d:`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, fill:"none",
+      stroke: risk ? RISKC[risk] : "rgba(255,255,255,.22)",
+      "stroke-width": risk ? Math.min(6,1.4+Math.sqrt(cells||1)*1.1) : 1.2,
+      "stroke-opacity": risk?.6:1, "marker-end": risk ? `url(#fa-${risk})` : ""});
+    if(cells){ const ttl=el("title",{}); ttl.textContent=`${cells} cell${cells===1?"":"s"}`; path.appendChild(ttl); }
+    gE.appendChild(path);
+  };
+  colList.forEach(c=>{
+    const ck = "COLUMNS|"+c.key;
+    arrow("TABS|"+c.sheet, ck, 0, null);
+    c.into.forEach(l => arrow("SOURCES|"+l.srcId, ck, l.cells, l.risk));
+    c.out.forEach(l => arrow(ck, "DESTINATIONS|"+l.destId, l.cells, l.risk));
+  });
+
+  tiers.forEach(t=> t.items.forEach(it=>{
+    const p = pos[t.label+"|"+it.key];
+    const g = el("g",{transform:`translate(${p.x},${p.y})`});
+    if(it.onClick){ g.setAttribute("class","node"); g.onclick = it.onClick; }
+    g.appendChild(el("rect",{width:p.w,height:p.h,rx:10,fill:"rgba(255,255,255,.09)",
+      stroke:"rgba(255,255,255,.32)","stroke-width":1.3}));
+    const t1 = el("text",{x:11,y: it.sub?17:24,"font-size":11.5,fill:"#eef2fa","font-weight":600});
+    t1.textContent = trunc(it.label,22); g.appendChild(t1);
+    if(it.sub){
+      const t2 = el("text",{x:11,y:31,"font-size":9.5,fill:"rgba(255,255,255,.5)"});
+      t2.textContent = trunc(it.sub,26); g.appendChild(t2);
+    }
+    const ttl = el("title",{}); ttl.textContent = it.sub ? `${it.label} (${it.sub})` : it.label;
+    g.appendChild(ttl);
+    gN.appendChild(g);
+  }));
+  updateScrollHints();
+}
+
+/* ------------------------------------------------------------ highlight */
+function walk(start, dir){
+  const seen = new Set(), stack=[start];
+  while(stack.length){
+    const cur = stack.pop();
+    G.edges.forEach(e=>{
+      if(dir==="up" && e.to===cur && !seen.has(e.from)){ seen.add(e.from); stack.push(e.from); }
+      if(dir==="down" && e.from===cur && !seen.has(e.to)){ seen.add(e.to); stack.push(e.to); }
+    });
+  }
+  return seen;
+}
+function clearHi(){
+  Object.values(G._nodeEls).forEach(o=>o.g.classList.remove("faded"));
+  G._edgeEls.forEach(p=>{p.classList.remove("faded"); p.setAttribute("stroke-width",1.7);});
+}
+function applyView(){
+  if(!G._nodeEls) return;
+  clearHi();
+  if(riskMode){
+    const keep = new Set();
+    G.edges.forEach(e=>{ if(e.risk==="high"){keep.add(e.from);keep.add(e.to);} });
+    G._edgeEls.forEach(p=>{ if(p.dataset.risk!=="high") p.classList.add("faded"); });
+    Object.entries(G._nodeEls).forEach(([id,o])=>{ if(!keep.has(id)) o.g.classList.add("faded"); });
+    return;
+  }
+  if(traceMode && selected){
+    const keep = new Set([...walk(selected,"up"), ...walk(selected,"down"), selected]);
+    Object.entries(G._nodeEls).forEach(([id,o])=>{ if(!keep.has(id)) o.g.classList.add("faded"); });
+    G._edgeEls.forEach(p=>{
+      if(keep.has(p.dataset.from) && keep.has(p.dataset.to)) p.setAttribute("stroke-width",2.8);
+      else p.classList.add("faded");
+    });
+  }
+}
+
+/* ------------------------------------------------------- isolate one flow */
+function pathsTo(start, maxPaths=40){
+  // every upstream chain feeding `start`, one entry per distinct source -> ... -> start route
+  const out = [];
+  (function rec(node, chain, visited){
+    if(out.length >= maxPaths) return;
+    const parents = G.edges.filter(e=>e.to===node && !visited.has(e.from));
+    if(!parents.length){ if(chain.length) out.push(chain.slice().reverse()); return; }
+    parents.forEach(e=> rec(e.from, chain.concat([e]), new Set([...visited, e.from])));
+  })(start, [], new Set([start]));
+  return out;
+}
+
+function applyIsolate(){
+  if(!G._nodeEls) return;
+  if(!isolateMode || !selected){
+    Object.values(G._nodeEls).forEach(o=>o.g.classList.remove("gone"));
+    G._edgeEls.forEach(p=>p.classList.remove("gone"));
+    return;
+  }
+  let keepNodes, keepEdgeIds;
+  if(chainState){
+    const chain = chainState.chains[chainState.idx];
+    keepEdgeIds = new Set(chain.map(e=>e.id));
+    keepNodes = new Set([selected, ...chain.map(e=>e.from), ...chain.map(e=>e.to),
+                          ...walk(selected,"down")]);
+    G._edgeEls.forEach(p=>{
+      const keep = keepEdgeIds.has(p.dataset.id) ||
+        (walk(selected,"down").has(p.dataset.to) && keepNodes.has(p.dataset.from));
+      p.classList.toggle("gone", !keep);
+    });
+  } else {
+    keepNodes = new Set([...walk(selected,"up"), ...walk(selected,"down"), selected]);
+    G._edgeEls.forEach(p=>{
+      const keep = keepNodes.has(p.dataset.from) && keepNodes.has(p.dataset.to);
+      p.classList.toggle("gone", !keep);
+    });
+  }
+  Object.entries(G._nodeEls).forEach(([id,o])=> o.g.classList.toggle("gone", !keepNodes.has(id)));
+}
+
+/* --------------------------------------------------------------- select */
+function nName(id){ const n=G.nodes.find(x=>x.id===id); return n?n.name:id; }
+
+// into/out are pre-filtered for this one sheet (built once per node in select(), not per sheet —
+// see bySheet() below) so this function does no scanning of its own: draw only.
+function sheetRowHTML(s, into, out, open){
+  const total = into.length + out.length;
+  const detail = !open ? "" : `
+    <div style="margin-top:8px">
+      ${into.length ? `<div class="flowhead">receives into ${esc(s.name)}</div>
+        <div class="panel-sm">${flowSVG(into, {
+          leftKey: c => `${c.srcFile} · ${c.src_sheet}${c.src_col?"!"+c.src_col:""}`,
+          rightKey: c => c.dest_col, rightSub: c => c.dest_header,
+          colorOf: c => RISKC[c.risk], leftTag: "SOURCE FILE", rightTag: s.name.toUpperCase()})}</div>` : ""}
+      ${out.length ? `<div class="flowhead">sends out from ${esc(s.name)}</div>
+        <div class="panel-sm">${flowSVG(out, {
+          leftKey: c => c.src_col, rightKey: c => `${c.destFile} · ${c.dest_sheet}!${c.dest_col}`,
+          rightSub: c => c.dest_header, colorOf: c => RISKC[c.risk],
+          leftTag: s.name.toUpperCase(), rightTag: "DESTINATION FILE"})}</div>` : ""}
+      ${!total ? `<p style="color:var(--faint);font-size:12.5px;margin:4px 0 0">No cross-file column lineage detected in this sheet.</p>` : ""}
+    </div>`;
+
+  return `<div class="sheetrow ${open?"open":""}">
+    <div class="sheetrow-h">
+      <span class="chevron">${open?"▾":"▸"}</span>
+      <b>${esc(s.name)}</b>
+      <span class="meta">${s.rows}×${s.cols} · ${s.formula_cells} formulas${total?` · ${total} traced`:""}</span>
+    </div>
+    ${detail}
+  </div>`;
+}
+
+// Build {sheetName: [columns]} once for a node's incoming/outgoing edges, instead of every
+// sheetRowHTML call re-scanning all edges for itself.
+function bySheet(edges, side){
+  const key = side==="in" ? "dest_sheet" : "src_sheet";
+  const peer = side==="in" ? "srcFile" : "destFile", peerId = side==="in" ? "srcId" : "destId";
+  const out = {};
+  edges.forEach(e => {
+    const otherId = side==="in" ? e.from : e.to;
+    (e.columns||[]).forEach(c => (out[c[key]] ??= []).push(
+      {...c, [peer]: nName(otherId), [peerId]: otherId, edgeId: e.id, risk: e.risk}));
+  });
+  return out;
+}
+
+function openSheet(bookId, sheetName){ selected = bookId; expandedSheet = sheetName; select(bookId, true); }
+function closeSheet(){ expandedSheet = null; if(selected) select(selected, true); }
+function openPeer(peerId){
+  const n = G.nodes.find(x=>x.id===peerId);
+  if(n) n.kind==="external" ? selectExternal(peerId) : select(peerId);
+}
+
+// Collapse a bySheet() map (per-sheet, per-column) up one level to (peer file, sheet) pairs, for the
+// file-level "which files/sources connect to which of THIS file's tabs" overview diagram.
+function tabSummary(bySheetMap, peerField){
+  const peerIdField = peerField==="srcFile" ? "srcId" : "destId";
+  const agg = {};
+  Object.values(bySheetMap).flat().forEach(c=>{
+    const sheet = peerField==="srcFile" ? c.dest_sheet : c.src_sheet;
+    const key = c[peerField] + "|" + sheet;
+    const row = agg[key] ??= {peer: c[peerField], peerId: c[peerIdField], sheet,
+                               cells: 0, edgeId: c.edgeId, risk: c.risk};
+    row.cells += c.cells;
+  });
+  return Object.values(agg);
+}
+
+function select(id, keepSheet){
+  if(!keepSheet) expandedSheet = null;
+  selected = id;
+  Object.values(G._nodeEls).forEach(o=>o.r.setAttribute("stroke-width",1.4));
+  if(G._nodeEls[id]) G._nodeEls[id].r.setAttribute("stroke-width",3);
+  const n = G.nodes.find(x=>x.id===id);
+  const ins = G.edges.filter(e=>e.to===id), outs = G.edges.filter(e=>e.from===id);
+  const chip = e => `<span class="chip ${e.risk==='high'?'bad':e.risk==='med'?'warn':'good'}">${MECH[e.mechanism]}</span>`;
+  const colChip = e => (e.columns && e.columns.length)
+    ? `<span class="chip" style="cursor:pointer" onclick="selectEdge('${e.id}')" title="See tab/column lineage">${e.columns.length} col${e.columns.length===1?"":"s"} traced</span>`
+    : "";
+  const list = arr => arr.length ? arr.map(x=>`<li>${x}</li>`).join("")
+                                 : `<li style="color:var(--faint)">none detected</li>`;
+  const extSources = n.external_sources||[];
+  const hasExternal = extSources.length || n.web_formula_cells;
+  const chains = pathsTo(id);
+  const inBySheet = bySheet(ins, "in"), outBySheet = bySheet(outs, "out");
+  const intoTabs = tabSummary(inBySheet, "srcFile"), outTabs = tabSummary(outBySheet, "destFile");
+
+  const volColor = n.volatile ? `color:${RISKC.med}` : "";
+  const hcColor = n.hardcoded ? `color:${RISKC.med}` : "";
+
+  $("#side").innerHTML = `
+    <h3>${n.name}</h3>
+    <div class="kind">${n.rel_path} · ${STAGE_NAMES[n.stage]}</div>
+    ${n.error ? `<div class="chip bad">unreadable: ${n.error}</div>` : ""}
+
+    ${expandedSheet ? "" : `
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin:2px 0 0">
+      <h4 style="margin:0">Tabs &amp; connections</h4>
+      <div class="row" style="gap:12px;margin:0">
+        <span class="sheetback" id="isolateHere">${isolateMode?"◉ isolating":"◎ isolate"}</span>
+        <span class="sheetback" id="bigFlowBtn">⤢ full flow</span>
+      </div>
+    </div>
+    <div class="panel-sm">${radialSVG(id, n.name, n.sheets, intoTabs, outTabs)}</div>
+    ${isolateMode && chains.length>1 ? `
+    <div class="flowbar">
+      <button class="btn sm" id="flowPrev">‹</button>
+      <span id="flowLabel">${chainState?`Flow ${chainState.idx+1} of ${chains.length}`:`All ${chains.length} flows`}</span>
+      <button class="btn sm" id="flowNext">›</button>
+    </div>` : ""}
+    <p class="cap2">center = this file · inner ring = its tabs (click for columns) · outer ring = the
+      files/sources each tab connects to (click to open)</p>
+    ${!intoTabs.length && !outTabs.length ? `<p style="color:var(--faint);font-size:12.5px;margin-top:-6px">No
+      cross-file connections detected yet — declared handoffs and links this scanner couldn't parse a cell
+      out of won't show here.</p>` : ""}
+    `}
+
+    <div class="statstrip">
+      <span><b>${n.sheet_count}</b> sheet${n.sheet_count===1?"":"s"}</span>
+      <span><b>${n.formula_count.toLocaleString()}</b> formulas</span>
+      <span><b>${n.lookups}</b> lookups</span>
+      <span><b style="${volColor}">${n.volatile}</b> volatile</span>
+      <span><b style="${hcColor}">${n.hardcoded}</b> hardcoded</span>
+      <span><b>${n.in_degree}</b> in / <b>${n.out_degree}</b> out</span>
+      <span>modified ${n.modified}</span>
+    </div>
+
+    ${hasExternal ? `
+    <h4>Data from outside this folder</h4>
+    ${extSources.map(s=>`<span class="extchip chip ${s.kind==='sharepoint'?'good':'bad'}">${EXT_ICON[s.kind]||"🔌"} <b>${MECH[s.kind]||s.kind}</b><br>${esc(s.detail)}<br><span style="font-size:10.5px;color:var(--dim)">${esc(s.via)}</span></span>`).join("")}
+    ${n.web_formula_cells ? `<span class="extchip chip bad">📡 <b>Live web formula</b><br>${n.web_formula_cells} cell${n.web_formula_cells===1?"":"s"} reach the internet every time this recalculates</span>` : ""}
+    ` : ""}
+
+    <h4>Owner</h4>
+    <div class="row" style="gap:6px">
+      <input type="text" id="ownerIn" value="${(n.owner||"").replace(/"/g,'&quot;')}" placeholder="who maintains this file?">
+      <button class="btn sm" id="ownerSave">Save</button>
+    </div>
+
+    <h4>Fed by</h4>
+    <ul>${list(ins.map(e=>`<b>${nName(e.from)}</b> ${chip(e)} ${colChip(e)}${e.note?`<br><span style="font-size:12px">${e.note}</span>`:""}`))}</ul>
+    <h4>Feeds</h4>
+    <ul>${list(outs.map(e=>`<b>${nName(e.to)}</b> ${chip(e)} ${colChip(e)}`))}</ul>
+    ${n.unresolved_refs.length ? `<h4>Broken links</h4><ul>${n.unresolved_refs.map(r=>`<li class="chip bad">${r}</li>`).join("")}</ul>` : ""}
+
+    <h4>${expandedSheet ? "" : "All "}Sheets — click one to see its columns</h4>
+    ${expandedSheet ? `<div class="sheetback" id="sheetBack">‹ back to all ${n.sheet_count} sheets</div>` : ""}
+    <div class="sheetlist">${
+      (expandedSheet ? n.sheets.filter(s=>s.name===expandedSheet) : n.sheets)
+        .map(s => sheetRowHTML(s, inBySheet[s.name]||[], outBySheet[s.name]||[], s.name===expandedSheet))
+        .join("")
+    }</div>`;
+
+  $("#ownerSave").onclick = async ()=>{
+    const r = await api("/api/annotate", {kind:"node", id, value:{owner:$("#ownerIn").value.trim()}});
+    if(r.graph){ G = r.graph; render(); select(id, true); toast("Owner saved to your folder"); }
+  };
+  if($("#isolateHere")) $("#isolateHere").onclick = ()=>{
+    isolateMode = !isolateMode; chainState = null;
+    $("#isolateBtn").classList.toggle("on", isolateMode);
+    $("#isolateBtn").textContent = "Isolate: "+(isolateMode?"on":"off");
+    select(id, true);
+  };
+  if($("#sheetBack")) $("#sheetBack").onclick = closeSheet;
+  if($("#bigFlowBtn")) $("#bigFlowBtn").onclick = ()=> openBigFlow(id);
+  $$(".sheetrow-h").forEach((hdr,i)=>{
+    hdr.onclick = expandedSheet ? closeSheet : (()=> openSheet(id, n.sheets[i].name));
+  });
+  if($("#flowPrev")) $("#flowPrev").onclick = ()=>{
+    const n2 = chains.length;
+    const idx = chainState ? (chainState.idx - 1 + n2) % n2 : n2 - 1;
+    chainState = {chains, idx}; select(id, true);
+  };
+  if($("#flowNext")) $("#flowNext").onclick = ()=>{
+    const n2 = chains.length;
+    const idx = chainState ? (chainState.idx + 1) % n2 : 0;
+    chainState = {chains, idx}; select(id, true);
+  };
+  applyView();
+  applyIsolate();
+}
+
+/* ---------------------------------------------------------- select an edge */
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+const trunc = (s,n=20) => s && s.length>n ? s.slice(0,n-1)+"…" : (s||"");
+// safe to drop into  onclick="fn('${jsEsc(s)}')"  — a single-quoted JS literal inside a double-quoted HTML attribute
+const jsEsc = s => String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+
+// One diagram primitive for every "flow" view in the app (edge detail + per-sheet drill-down):
+// a two-lane box-and-curve diagram. Callers vary only in how a column's left/right key/label/color
+// is derived — the drawing logic itself is written once.
+// Center = the selected file. Ring 1 = every tab it has, spaced evenly around the center — click one to
+// drill into its columns. Ring 2 = the peer files/sources that feed or are fed by each tab, fanned out
+// from that tab's own spoke. Same "drill down, spread into more detail" shape at every level: file, then
+// tab, then peer.
+function radialSVG(fileId, fileName, sheets, intoTabs, outTabs){
+  const peersBySheet = {};
+  intoTabs.forEach(r => (peersBySheet[r.sheet] ??= []).push({...r, dir:"in"}));
+  outTabs.forEach(r => (peersBySheet[r.sheet] ??= []).push({...r, dir:"out"}));
+  const maxPeers = Math.max(1, ...sheets.map(s => (peersBySheet[s.name]||[]).length));
+
+  const W=372, cx=W/2, ring1R=60, ring2R=120 + Math.max(0, maxPeers-3)*7;
+  const cy = Math.max(178, ring2R + 46), H = cy + ring2R + 46;
+  const n = Math.max(1, sheets.length), slice = 360/n;
+  const polar = (deg,r) => { const a=(deg-90)*Math.PI/180; return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; };
+
+  const spokes = [], nodes = [];
+  sheets.forEach((s,i)=>{
+    const angle = i*slice + slice/2, [tx,ty] = polar(angle, ring1R);
+    spokes.push(`<path d="M${cx},${cy} L${tx},${ty}" stroke="rgba(255,255,255,.22)" stroke-width="1.4" fill="none"/>`);
+
+    // a lone or lightly-connected tab gets a narrow fan; a tab with many peers (a "collector" sheet,
+    // e.g. a trial balance fed by ten files) gets a much wider one so labels don't collide.
+    const peers = peersBySheet[s.name] || [];
+    const span = Math.min(slice*0.92, Math.max(50, peers.length*34), 320), start = angle - span/2;
+    const labelChars = peers.length > 4 ? 10 : 13;
+    peers.forEach((p,j)=>{
+      const pa = peers.length===1 ? angle : start + span*j/(peers.length-1);
+      const rr = ring2R + (j%2)*16;               // stagger radius on alternating peers
+      const [px,py] = polar(pa, rr);
+      const color = RISKC[p.risk] || RISKC.med;
+      const click = p.peerId ? ` class="radnode" onclick="openPeer('${p.peerId}')"` : "";
+      const dirTxt = p.dir==="in" ? "fed by" : "feeds";
+      const yOff = py>=cy ? 13+(j%2)*11 : -(8+(j%2)*11);   // stagger label distance too
+      spokes.push(`<path d="M${tx},${ty} L${px},${py}" stroke="${color}" stroke-opacity=".65"
+        stroke-width="${Math.min(4,1+Math.sqrt(p.cells))}" fill="none"/>`);
+      nodes.push(`<g${click}><circle cx="${px}" cy="${py}" r="4.5" fill="${color}"/>
+        <text x="${px}" y="${py+yOff}" text-anchor="middle" class="radlbl">${esc(trunc(p.peer,labelChars))}</text>
+        <title>${dirTxt} ${esc(p.peer)} — ${p.cells} cell${p.cells===1?"":"s"}</title></g>`);
+    });
+
+    nodes.push(`<g class="radnode" onclick="openSheet('${jsEsc(fileId)}','${jsEsc(s.name)}')">
+      <circle cx="${tx}" cy="${ty}" r="8.5" fill="rgba(122,162,255,.85)" stroke="#fff" stroke-width="1.2"/>
+      <text x="${tx}" y="${ty + (ty>cy?19:-13)}" text-anchor="middle" class="radlbl" font-weight="600">${esc(trunc(s.name,13))}</text>
+      <title>${esc(s.name)} — click for column detail</title></g>`);
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="radial">
+    ${spokes.join("")}${nodes.join("")}
+    <g class="radnode" onclick="openBigFlow('${jsEsc(fileId)}')">
+      <circle cx="${cx}" cy="${cy}" r="27" fill="rgba(122,162,255,.15)" stroke="var(--hi)" stroke-width="1.6"/>
+      <text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${esc(trunc(fileName,12))}</text>
+      <title>click to open the full flow on the big canvas</title>
+    </g>
+  </svg>`;
+}
+
+function flowSVG(columns, opts={}){
+  if(!columns || !columns.length) return "";
+  const leftKey   = opts.leftKey   || (c => `${c.src_sheet}!${c.src_col}`);
+  const rightKey  = opts.rightKey  || (c => `${c.dest_sheet}!${c.dest_col}`);
+  const rightSub  = opts.rightSub  || (c => c.dest_header || "");
+  const colorOf   = opts.colorOf   || (() => opts.color || RISKC.med);
+  const leftTag   = opts.leftTag   || (columns.some(c=>c.src_sheet && c.src_sheet!=="web") ? "SOURCE" : "WEB");
+  const rightTag  = opts.rightTag  || "DESTINATION";
+
+  const lefts = [...new Set(columns.map(leftKey))], rights = [...new Set(columns.map(rightKey))];
+  const subOf = {}; columns.forEach(c => { const k=rightKey(c); if(rightSub(c)) subOf[k] = rightSub(c); });
+
+  const W = 300, rowH = 30, padTop = 14, boxW = 112;
+  const H = padTop*2 + Math.max(lefts.length, rights.length)*rowH;
+  const leftX = 4, rightX = W-4;
+  const yOf = keys => Object.fromEntries(keys.map((k,i) => [k, padTop + i*rowH + rowH/2]));
+  const leftY = yOf(lefts), rightY = yOf(rights);
+
+  const links = columns.map(c => {
+    const y1 = leftY[leftKey(c)], y2 = rightY[rightKey(c)];
+    if(y1==null || y2==null) return "";
+    const sw = Math.min(7, 1.4 + Math.sqrt(c.cells)*1.3), mx = W/2;
+    const clickable = c.edgeId ? ` style="cursor:pointer" onclick="selectEdge('${c.edgeId}')"` : "";
+    return `<path d="M${leftX+boxW},${y1} C${mx},${y1} ${mx},${y2} ${rightX-boxW},${y2}" fill="none"
+      stroke="${colorOf(c)}" stroke-width="${sw}" stroke-opacity=".5"${clickable}><title>${c.cells} cell${c.cells===1?"":"s"}</title></path>`;
+  }).join("");
+
+  const box = (keys, y, x, sub, onClick) => keys.map(k => {
+    const jump = onClick && onClick(k);
+    const click = jump ? ` class="clickbox" onclick="${jump}"` : "";
+    return `<g${click}>
+    <rect x="${x}" y="${y[k]-11}" width="${boxW}" height="22" rx="7" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.28)"/>
+    ${sub[k]
+      ? `<text x="${x+boxW/2}" y="${y[k]-1}" text-anchor="middle">${esc(trunc(k,17))}</text>
+         <text x="${x+boxW/2}" y="${y[k]+10}" text-anchor="middle" class="hdr">${esc(trunc(sub[k],17))}</text>`
+      : `<text x="${x+boxW/2}" y="${y[k]+4}" text-anchor="middle">${esc(trunc(k,17))}</text>`}
+    ${jump ? `<title>click to open ${esc(k)}</title>` : ""}</g>`;
+  }).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="bipartite">
+    ${links}
+    ${box(lefts, leftY, leftX, {}, opts.leftClick)}
+    ${box(rights, rightY, rightX-boxW, subOf, opts.rightClick)}
+    <text x="${leftX}" y="10" class="hdr">${leftTag}</text>
+    <text x="${rightX}" y="10" text-anchor="end" class="hdr">${rightTag}</text>
+  </svg>`;
+}
+
+function selectEdge(id){
+  const e = G.edges.find(x=>x.id===id);
+  if(!e) return;
+  selected = null;
+  const fromN = G.nodes.find(n=>n.id===e.from), toN = G.nodes.find(n=>n.id===e.to);
+  const riskCls = e.risk==='high'?'bad':e.risk==='med'?'warn':'good';
+
+  let colsHtml;
+  if(e.columns && e.columns.length){
+    colsHtml = `<table><tr><th>Source tab · col</th><th>Dest tab · col</th><th>Cells</th></tr>` +
+      e.columns.map(c=>`<tr>
+        <td>${esc(c.src_sheet)}!${esc(c.src_col)}</td>
+        <td>${esc(c.dest_sheet)}!${esc(c.dest_col)}${c.dest_header?`<br><span style="color:var(--dim)">${esc(c.dest_header)}</span>`:""}</td>
+        <td>${c.cells}</td>
+      </tr>`).join("") + `</table>`;
+  } else {
+    colsHtml = `<p style="color:var(--dim);font-size:13px">${e.discovered
+      ? "No formula-level detail could be parsed for this link (it may use a named range or an unusual reference style)."
+      : "This is a declared handoff — a person moves the data, so no formula trail exists to read. Describe exactly what moves in the note below."}</p>`;
+  }
+  const formulas = (e.columns||[]).filter(c=>c.sample_formula).slice(0,8).map(c=>
+    `<div style="margin-bottom:7px"><span class="chip">${esc(c.dest_sheet)}!${c.sample_cells[0]}</span><br><code>${esc(c.sample_formula)}</code></div>`
+  ).join("");
+
+  $("#side").innerHTML = `
+    <h3>${fromN?fromN.name:e.from} → ${toN?toN.name:e.to}</h3>
+    <div class="kind"><span class="chip ${riskCls}">${MECH[e.mechanism]}</span> ${e.discovered?"auto-detected":"declared"}${e.owner?" · "+esc(e.owner):""}</div>
+    ${e.note?`<p style="color:var(--dim);font-size:13px">${esc(e.note)}</p>`:""}
+    <h4>Tab &amp; column lineage</h4>
+    ${e.columns && e.columns.length ? `<div class="glass" style="padding:8px;background:rgba(0,0,0,.16)">${flowSVG(e.columns, {color: RISKC[e.risk]})}</div>` : ""}
+    ${colsHtml}
+    ${formulas?`<h4>Sample formulas</h4>${formulas}`:""}
+    <div class="row" style="margin-top:14px">
+      <button class="btn sm" id="edgeClose">Close</button>
+    </div>`;
+  $("#edgeClose").onclick = ()=>{ clearHi(); $("#side").innerHTML =
+    `<h3>Nothing selected</h3><div class="kind">Click a workbook or an arrow in the map</div>`; };
+
+  clearHi();
+  G._edgeEls.forEach(p=>{ if(p.dataset.id===id) p.setAttribute("stroke-width",3); else p.classList.add("faded"); });
+  Object.entries(G._nodeEls).forEach(([nid,o])=>{ if(nid!==e.from && nid!==e.to) o.g.classList.add("faded"); });
+}
+
+/* ------------------------------------------------------ select an external source */
+function selectExternal(id){
+  const n = G.nodes.find(x=>x.id===id);
+  if(!n) return;
+  selected = null; isolateMode = false; chainState = null;
+  $("#isolateBtn").classList.remove("on"); $("#isolateBtn").textContent = "Isolate: off";
+  const outs = G.edges.filter(e=>e.from===id);
+  const consumers = outs.map(e=>{
+    const to = G.nodes.find(x=>x.id===e.to);
+    return `<li><b>${to?to.name:e.to}</b> <span class="chip ${e.risk==='high'?'bad':e.risk==='med'?'warn':'good'}">${MECH[e.mechanism]}</span></li>`;
+  }).join("") || `<li style="color:var(--faint)">nothing detected</li>`;
+
+  $("#side").innerHTML = `
+    <h3>${esc(n.name)}</h3>
+    <div class="kind">${esc(n.label)} · outside this folder</div>
+    <div class="kv"><span>Detail</span><span style="text-align:right;word-break:break-all">${esc(n.detail)}</span></div>
+    <div class="kv"><span>Detected via</span><span>${esc(n.via)}</span></div>
+    <p style="color:var(--dim);font-size:13px">Nothing in your scanned folder controls this — it's a live
+      external dependency. If it changes shape, goes offline, or the credentials expire, everything
+      downstream breaks silently.</p>
+    <h4>Feeds</h4>
+    <ul>${consumers}</ul>
+    <div class="row" style="margin-top:14px"><button class="btn sm" id="extClose">Close</button></div>`;
+  $("#extClose").onclick = ()=>{ clearHi(); $("#side").innerHTML =
+    `<h3>Nothing selected</h3><div class="kind">Click a workbook or an arrow in the map</div>`; };
+
+  clearHi(); applyIsolate();
+  const keep = new Set([id, ...outs.map(e=>e.to)]);
+  Object.entries(G._nodeEls).forEach(([nid,o])=>{ if(!keep.has(nid)) o.g.classList.add("faded"); });
+  G._edgeEls.forEach(p=>{ if(!outs.some(e=>e.id===p.dataset.id)) p.classList.add("faded"); else p.setAttribute("stroke-width",2.8); });
+}
+
+/* --------------------------------------------------------------- toggles */
+$("#traceBtn").onclick = e=>{
+  traceMode=!traceMode; riskMode=false;
+  e.target.classList.toggle("on",traceMode); e.target.textContent="Trace: "+(traceMode?"on":"off");
+  $("#riskBtn").classList.remove("on");
+  if(traceMode && !selected) toast("Now click a workbook to trace it");
+  applyView();
+};
+$("#isolateBtn").onclick = e=>{
+  if(!isolateMode && !selected) return toast("Click a workbook first, then Isolate");
+  isolateMode=!isolateMode; chainState=null;
+  e.target.classList.toggle("on",isolateMode); e.target.textContent="Isolate: "+(isolateMode?"on":"off");
+  applyIsolate();
+  if(selected) select(selected);
+};
+$("#riskBtn").onclick = e=>{
+  riskMode=!riskMode;
+  if(riskMode){ traceMode=false; $("#traceBtn").classList.remove("on"); $("#traceBtn").textContent="Trace: off"; }
+  e.target.classList.toggle("on",riskMode); applyView();
+};
+$("#backToMapBtn").onclick = closeBigFlow;
+$("#resetBtn").onclick = ()=>{
+  traceMode=riskMode=isolateMode=false; selected=null; chainState=null; $("#q").value="";
+  if(flowView){ flowView=null; render(); }
+  $("#traceBtn").classList.remove("on"); $("#traceBtn").textContent="Trace: off";
+  $("#riskBtn").classList.remove("on");
+  $("#isolateBtn").classList.remove("on"); $("#isolateBtn").textContent="Isolate: off";
+  Object.values(G._nodeEls).forEach(o=>o.r.setAttribute("stroke-width",1.4));
+  clearHi(); applyIsolate();
+};
+$("#q").oninput = ev=>{
+  const v = ev.target.value.toLowerCase().trim();
+  clearHi(); if(!v) return applyView();
+  Object.entries(G._nodeEls).forEach(([id,o])=>{
+    const n = G.nodes.find(x=>x.id===id);
+    const hay = n.kind==="external"
+      ? (n.name+" "+n.label+" "+n.detail).toLowerCase()
+      : (n.name+" "+n.rel_path+" "+n.sheets.map(s=>s.name).join(" ")+" "+(n.owner||"")).toLowerCase();
+    if(!hay.includes(v)) o.g.classList.add("faded");
+  });
+  G._edgeEls.forEach(p=>p.classList.add("faded"));
+};
+
+/* ------------------------------------------------- declare a handoff */
+$("#addEdgeBtn").onclick = ()=>{
+  const opts = G.nodes.filter(n=>n.kind==="workbook").map(n=>`<option value="${n.id}">${n.name}</option>`).join("");
+  $("#side").innerHTML = `
+    <h3>Declare a handoff</h3>
+    <div class="kind">For the hops no scanner can see — a paste, an email, a re-key.</div>
+    <h4>From (source file)</h4><select id="feFrom">${opts}</select>
+    <h4>To (destination file)</h4><select id="feTo">${opts}</select>
+    <h4>How does the data actually move?</h4>
+    <select id="feMech">
+      <option value="paste">Someone copy-pastes it</option>
+      <option value="manual">Someone types it in</option>
+      <option value="email">It is emailed between people</option>
+      <option value="query">Automated refresh / query</option>
+      <option value="formula">Formula link</option>
+    </select>
+    <h4>Who does it?</h4><input type="text" id="feOwner" placeholder="name or role">
+    <h4>Note</h4><textarea id="feNote" rows="2" placeholder="e.g. pasted into the Data tab every Tuesday"></textarea>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" id="feSave">Add to map</button>
+      <button class="btn" onclick="selected&&select(selected)">Cancel</button>
+    </div>`;
+  $("#feSave").onclick = async ()=>{
+    const v = {from:$("#feFrom").value, to:$("#feTo").value, mechanism:$("#feMech").value,
+               owner:$("#feOwner").value.trim(), note:$("#feNote").value.trim()};
+    if(v.from===v.to) return toast("Pick two different files");
+    const r = await api("/api/annotate", {kind:"manual_edge", value:v});
+    if(r.graph){ G = r.graph; render(); select(v.to); toast("Handoff recorded in your folder"); }
+  };
+};
+
+/* ---------------------------------------------------------------- render */
+function render(){
+  const s = G.stats;
+  $("#tiles").innerHTML = [
+    [s.workbooks,"Workbooks",0],[s.handoffs,"Handoffs",0],[s.fragile,"Fragile",s.fragile>0],
+    [s.manual_pct+"%","Moves by hand",s.manual_pct>40],[s.formulas.toLocaleString(),"Formulas",0],
+    [s.traced_columns,"Columns traced",0],[s.external_sources,"External sources",s.external_sources>0],
+    [s.broken_links,"Broken links",s.broken_links>0]
+  ].map(([v,l,alert])=>`<div class="glass tile ${alert?"alert":""}"><b>${v}</b><span>${l}</span></div>`).join("");
+
+  $("#legend").innerHTML = flowView
+    ? `<span style="color:var(--dim)">Full flow for <b style="color:var(--ink)">${esc(nName(flowView))}</b> — sources → tabs → columns → destinations. Click any box to open it.</span>`
+    : STAGE_NAMES.map((n,i)=>`<span><i class="sw" style="background:${STAGE_C[i]}${i===0?';border:1.4px dashed rgba(247,201,72,.8);background:transparent':''}"></i>${n}</span>`).join("")
+      + `<span><i class="sw" style="background:${RISKC.high}"></i>fragile (dashed)</span>`
+      + `<span><i class="sw" style="background:${RISKC.med}"></i>formula link</span>`
+      + `<span><i class="sw" style="background:${RISKC.low}"></i>automated</span>`;
+  $("#backToMapBtn").classList.toggle("hidden", !flowView);
+
+  if(flowView) drawBigFlow(); else drawGraph();
+  if(!selected) $("#side").innerHTML =
+    `<h3>Nothing selected</h3><div class="kind">Click a workbook in the map</div>
+     <p style="color:var(--dim);font-size:13px">Each box is a workbook. Each arrow is a handoff.
+     Dashed arrows are hops where a person moves the data — that is where numbers break.</p>`;
+  else select(selected);
+
+  const sev = {high:0,med:0,low:0};
+  G.findings.forEach(f=>sev[f.severity]++);
+  $("#fTiles").innerHTML = [["High",sev.high,"alert"],["Medium",sev.med,""],["Low",sev.low,""]]
+    .map(([l,v,c])=>`<div class="glass tile ${v&&c?"alert":""}"><b>${v}</b><span>${l} severity</span></div>`).join("");
+  $("#cards").innerHTML = G.findings.length ? G.findings.map(f=>`
+    <div class="glass card ${f.severity}">
+      <b>${f.kind}</b><div class="where">${f.where}</div>
+      <p>${f.what}</p><div class="fix">${f.fix}</div>
+    </div>`).join("")
+    : `<div class="glass card low"><b>Nothing flagged</b><p>Either this pipeline is unusually clean, or the
+       handoffs happen outside the files. Declare them on the map and check again.</p></div>`;
+
+  const ord = {high:0,med:1,low:2};
+  $("#hTable").innerHTML = "<tr><th>From</th><th>To</th><th>Mechanism</th><th>Risk</th><th>Source</th><th>Who</th><th>Tab · column lineage</th><th>Note</th><th></th></tr>"
+    + [...G.edges].sort((a,b)=>ord[a.risk]-ord[b.risk]).map(e=>{
+      const colsTxt = e.columns && e.columns.length
+        ? e.columns.map(c=>`${c.src_sheet}!${c.src_col}→${c.dest_sheet}!${c.dest_col}`).join(", ")
+        : "—";
+      return `<tr><td>${nName(e.from)}</td><td>${nName(e.to)}</td><td>${MECH[e.mechanism]}</td>
+      <td><span class="chip ${e.risk==='high'?'bad':e.risk==='med'?'warn':'good'}">${e.risk}</span></td>
+      <td>${e.discovered?"auto-detected":"declared"}</td><td>${e.owner||"—"}</td>
+      <td style="font-size:11.5px;color:var(--dim)">${colsTxt}</td><td>${e.note||"—"}</td>
+      <td><button class="btn sm" onclick="goTab('map');selectEdge('${e.id}')">Trace</button></td></tr>`;
+    }).join("");
+}
+
+$("#canvas").addEventListener("scroll", updateScrollHints);
+window.addEventListener("resize", updateScrollHints);
+
+/* ------------------------------------------------------------- on load */
+(async ()=>{
+  const st = await api("/api/state");
+  if(st.loaded){ G = st.graph; $("#rootIn").value = st.root; render(); goTab("map"); }
+})();
+</script>
+</body>
+</html>
